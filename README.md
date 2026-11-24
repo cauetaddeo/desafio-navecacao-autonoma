@@ -1,141 +1,98 @@
-# Projeto Culling Games (cg)
+# Desafio de navegação autônoma
 
-Este documento fornece um tutorial sobre como construir, executar e interagir
-com o projeto Culling Games ROS 2.
+O projeto resolve um desafio de navegação no simulador Culling Games, usando Python e ROS 2 Jazzy. Na primeira parte, o robô recebe o mapa completo e calcula o menor caminho até o alvo. Na segunda, ele explora o ambiente com sensores locais, constrói seu próprio mapa e usa esse mapa para reproduzir a rota da primeira parte.
 
-## 1. Construindo o Workspace
+## 1. Navegação com o mapa completo
 
-Antes de executar qualquer parte do projeto, você precisa construir os pacotes.
-Navegue até a raiz do workspace e execute:
+### 1.1 Leitura do mapa
+
+O programa `executar_parte1.py` consulta o serviço `/get_map`. O simulador devolve as dimensões do labirinto e uma lista com suas células. O programa organiza essa lista em linhas e colunas e identifica o robô (`r`), o alvo (`t`), as paredes (`b`) e os espaços livres (`f`).
+
+### 1.2 Cálculo da menor rota
+
+A função `buscar_rota`, em `parte1.py`, usa busca em largura (BFS). Cada célula transitável é um vértice, e cada movimento para cima, para baixo, para a esquerda ou para a direita custa um passo.
+
+A BFS examina primeiro as células a um passo da largada, depois as que estão a dois passos, e assim por diante. Por isso, a primeira vez que alcança o alvo, já encontrou uma rota mínima. A função registra de qual célula veio e qual movimento fez para reconstruir a sequência de comandos.
+
+### 1.3 Execução no simulador
+
+O programa envia cada comando pelo serviço `/move_command` e aguarda a confirmação antes de enviar o próximo. No `test.csv`, o robô saiu de `(1, 1)` e chegou ao alvo em `(13, 14)` com **25 movimentos: 12 para baixo e 13 para a direita**. As coordenadas seguem o formato `(linha, coluna)`, com contagem a partir de zero.
+
+## 2. Exploração e construção do mapa
+
+### 2.1 Leitura dos sensores
+
+O explorador começa com um mapa vazio e adota a largada como origem `(0, 0)`. A cada nova posição, lê o tópico `/culling_games/robot_sensors`, que informa o conteúdo das oito células vizinhas, incluindo as diagonais. A função `registrar_leitura`, em `parte2.py`, converte essas direções em coordenadas e atualiza o mapa.
+
+O programa também guarda as posições visitadas pelo robô. Uma casa livre na diagonal, por exemplo, já pode estar registrada no mapa mesmo que o robô ainda não tenha pisado nela.
+
+### 2.2 Exploração com DFS e retorno à largada
+
+O programa `executar_parte2.py` usa busca em profundidade (DFS). O robô avança para uma vizinha livre ainda não visitada e guarda o movimento em uma pilha. Quando esgota as opções, executa o movimento inverso para voltar à célula anterior. Esse retorno é o *backtracking*.
+
+O robô registra o alvo ao identificá-lo pelos sensores e deixa a entrada nessa célula para a reprodução da rota, pois pisar nela encerra a partida. Ao terminar a exploração, volta à largada e salva o mapa em `mapa_descoberto.csv`.
+
+### 2.3 Reprodução da rota e comparação
+
+O programa `reproduzir_rota.py` lê o CSV descoberto, aplica a mesma função `buscar_rota` da parte 1 e executa os movimentos no simulador. A comparação foi feita no mesmo `test.csv`, partindo da mesma posição.
+
+| Etapa | Resultado observado |
+|---|---|
+| Parte 1 — BFS sobre o mapa fornecido | 12 movimentos para baixo e 13 para a direita. Chegada em `(13, 14)` no passo 25. |
+| Parte 2 — exploração por sensores | 841 células conhecidas, 728 casas visitadas e 1.454 movimentos de exploração. Retorno à largada. |
+| Parte 2 — BFS sobre o mapa descoberto | A mesma sequência de 12 movimentos para baixo e 13 para a direita. Chegada em `(13, 14)` no passo 25. |
+
+Os 1.454 movimentos incluem as idas e voltas necessárias para explorar o ambiente. Depois que o mapa foi salvo, o robô conseguiu reproduzir a rota original de **25 movimentos** usando apenas o conhecimento adquirido na exploração.
+
+## 3. Como reproduzir o teste
+
+### 3.1 Preparar o ambiente e abrir o simulador
+
+Com ROS 2 Jazzy e `colcon` instalados no Ubuntu, execute na raiz do repositório:
 
 ```bash
+sudo apt install python3-pygame
+source /opt/ros/jazzy/setup.bash
 colcon build
-```
-
-Este comando irá compilar todos os pacotes (`cg`, `cg_interfaces`, `cg_teleop`).
-Lembre-se de "source" o workspace em qualquer novo terminal que você abrir:
-
-```bash
 source install/setup.bash
+ros2 run cg maze --map test.csv
 ```
 
-## 2. Executando o Jogo
+Mantenha esse terminal aberto durante o teste.
 
-O jogo principal é uma janela Pygame que exibe o labirinto e o movimento do
-robô.
+### 3.2 Executar a parte 1
 
-Para iniciar o jogo, execute o seguinte comando em um terminal:
+Abra um segundo terminal na raiz do repositório e execute:
 
 ```bash
-ros2 run cg maze
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+python3 parte1.py
+python3 executar_parte1.py
 ```
 
-### Opções de Carregamento do Labirinto
+O primeiro comando Python imprime a rota de referência do `test.csv`. O segundo consulta o mapa do simulador e movimenta o robô até o alvo.
 
-Você pode especificar como o labirinto é carregado usando argumentos adicionais:
+### 3.3 Executar a parte 2
 
-*   **Carregar um Labirinto Aleatório (Padrão):** Se nenhum argumento for fornecido, o jogo selecionará um labirinto aleatório do diretório `src/cg/maps`.
-    ```bash
-    ros2 run cg maze
-    ```
-*   **Carregar um Labirinto Específico:** Para carregar um labirinto pelo nome do arquivo (por exemplo, `test.csv`):
-    ```bash
-    ros2 run cg maze -- --map test.csv
-    ```
-*   **Gerar um Novo Labirinto:** Para gerar um novo labirinto aleatório e usá-lo imediatamente (esta opção tem precedência sobre `--map`):
-    ```bash
-    ros2 run cg maze -- --generate
-    ```
-
-## 3. Controlando o Robô
-
-Existem duas maneiras de controlar o robô: usando o nó de teleoperação fornecido
-ou enviando chamadas de serviço.
-
-### Método A: Usando o Nó de Teleoperação por Teclado
-
-Esta é a maneira mais fácil de jogar.
-
-1.  Em um **terminal separado** (enquanto o comando `ros2 run cg maze` ainda
-    estiver em execução), inicie o nó de teleoperação:
-    ```bash
-    ros2 run cg_teleop teleop_keyboard
-    ```
-2.  O terminal exibirá as teclas de atalho. Use as seguintes teclas neste
-    terminal para mover o robô na janela do jogo:
-    *   **Cima:** `w`, `k`, ou a tecla Seta para Cima
-    *   **Baixo:** `s`, `j`, ou a tecla Seta para Baixo
-    *   **Esquerda:** `a`, `h`, ou a tecla Seta para Esquerda
-    *   **Direita:** `d`, `l`, ou a tecla Seta para Direita
-
-### Método B: Enviando Chamadas de Serviço Manuais
-
-Você também pode enviar comandos de movimento individuais usando o serviço
-`/move_command`. Isso é útil para scripts ou depuração.
-
-Para mover o robô um passo, use o comando `ros2 service call`. Por exemplo, para
-mover para cima:
+No segundo terminal, reinicie o mesmo mapa:
 
 ```bash
-ros2 service call /move_command cg_interfaces/srv/MoveCmd "{direction: 'up'}"
+ros2 service call /reset cg_interfaces/srv/Reset "{is_random: false}"
 ```
 
-Substitua `'up'` por `'down'`, `'left'` ou `'right'` para outras direções.
-
-## 4. Sensoriamento do Ambiente
-
-O robô publica continuamente seus arredores imediatos em um tópico. Isso simula
-dados de sensores, mostrando o que está nas 8 células adjacentes (incluindo
-diagonais).
-
-*   **Tópico:** `/culling_games/robot_sensors`
-*   **Tipo de Mensagem:** `cg_interfaces/msg/RobotSensors`
-
-Para ver esses dados em tempo real, abra um novo terminal e execute:
+Quando o robô voltar à largada, inicie a exploração:
 
 ```bash
-ros2 topic echo /culling_games/robot_sensors
+python3 executar_parte2.py
 ```
 
-Você verá um fluxo de mensagens mostrando o que está nas células `up`, `down`,
-`left`, `right`, `up_left`, etc., em relação ao robô.
-
-## 5. Reiniciando o Jogo
-
-O serviço `/reset` permite reiniciar o tabuleiro do jogo. Ele suporta dois
-modos.
-
-### Reiniciando o Labirinto Atual
-
-Se você quiser tentar o *mesmo* labirinto novamente desde o início.
-
-*   **Com Teleoperação:** Pressione a tecla `r` no terminal `cg_teleop`.
-*   **Comando Manual:**
-    ```bash
-    ros2 service call /reset cg_interfaces/srv/Reset "{is_random: false}"
-    ```
-
-### Carregando um Novo Labirinto Aleatório
-
-Se você quiser um novo desafio com um labirinto novo e selecionado
-aleatoriamente.
-
-*   **Com Teleoperação:** Pressione a tecla `n` no terminal `cg_teleop`.
-*   **Comando Manual:**
-    ```bash
-    ros2 service call /reset cg_interfaces/srv/Reset "{is_random: true}"
-    ```
-A resposta do serviço informará o nome do arquivo do novo labirinto que foi
-carregado.
-
-## 6. Obtendo os Dados Completos do Labirinto
-
-Se você quiser obter o layout de todo o labirinto atual (por exemplo, para
-construir um mapa externo), você pode usar o serviço `/get_map`.
+Aguarde a mensagem `Mapa descoberto salvo em: mapa_descoberto.csv`. A DFS termina com o robô na largada. A partir dessa posição, execute:
 
 ```bash
-ros2 service call /get_map cg_interfaces/srv/GetMap
+python3 reproduzir_rota.py
 ```
 
-Isso retornará uma representação "achatada" da grade do labirinto e suas
-dimensões.
+Compare a linha `Rota:` com a impressa por `parte1.py` na etapa 3.2. Neste teste, as sequências coincidem e o último movimento exibido é `25 | right | (13, 14)`.
+
+Simulador utilizado: [Culling Games](https://github.com/rmnicola/culling_games).

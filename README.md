@@ -95,4 +95,32 @@ python3 reproduzir_rota.py
 
 Compare a linha `Rota:` com a impressa por `parte1.py` na etapa 3.2. Neste teste, as sequências coincidem e o último movimento exibido é `25 | right | (13, 14)`.
 
+### 3.4 Teste da parte 1 em um labirinto com obstáculos
+
+O mapa `1.csv` contém paredes internas que obrigam o robô a fazer desvios. O objetivo deste teste foi verificar se a mesma BFS usada no `test.csv` conseguia calcular e executar a menor rota em outro labirinto, sem alterar o algoritmo.
+
+**Como executar**
+
+Com o projeto já compilado, encerre o simulador anterior caso ele esteja aberto. Na raiz do repositório, abra o `1.csv` no primeiro terminal:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run cg maze --map 1.csv
+```
+
+Mantenha o simulador aberto. Em um segundo terminal, também na raiz do repositório, execute:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+python3 executar_parte1.py
+```
+
+O script consulta o mapa ativo pelo serviço `/get_map`, calcula a rota com BFS e envia os movimentos ao robô pelo serviço `/move_command`.
+
+**Resultado observado**
+
+O robô partiu de `(1, 1)`, contornou as paredes e alcançou o alvo em `(14, 14)` após 102 movimentos. O terminal registrou o último passo como `102 | left | (14, 14)`, e o simulador exibiu a tela de vitória. A mesma implementação encontrou uma rota mínima de 25 movimentos no `test.csv` e de 102 movimentos no `1.csv`.
+
 Simulador utilizado: [Culling Games](https://github.com/rmnicola/culling_games).
